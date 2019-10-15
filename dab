@@ -1,0 +1,209 @@
+#!/usr/bin/perl
+
+# The docker automatic builder.  See the README.md and LICENCE.txt files
+# for more info.
+
+use strict;
+
+use FindBin;
+
+use Getopt::Long;
+use Cwd 'abs_path';
+use Cwd;
+use File::Path  qw(make_path remove_tree);
+use File::Copy "cp";
+
+# These libs that are part of this distribution.
+
+use lib "$FindBin::Bin/autodocker";
+
+use config;
+use buildops;
+use gitops;
+use dockerops;
+use dockertags;
+use reports;
+use registryops;
+use Data::Dumper;
+
+# First get the configuration and print it out.
+
+$CONFIG::config = config->getconfig();
+
+
+# Then find all the docker directories and all sorts of info.
+my $dockers = dockerops->find_docker_directories;
+
+
+reports::show_config();
+
+# In the case of the option of "--all" build everything.
+# if --imagelist then just use those specified and ignore git
+# If not, try to figure out what to build from git
+# If all else fails, build everything with --all
+
+
+if ($CONFIG::config->{all}) {
+    print "--all is set.  Building all dockers you can ignore build reasons. \n";
+} else {
+    if ($CONFIG::config->{imagelist}) {
+	foreach my $imagename (@{$CONFIG::config->{imagelist}}) {
+	    $dockers->{$imagename}->{NEEDS_BUILDING} = 1;	    
+	    $dockers->{$imagename}->{BUILD_REASON} .= ' Included in imagelist. ';
+	}
+    } else {
+	if (gitops::get_git_changes($dockers)) {
+	    print "Git info found, found differences of $CONFIG::config->{'sourcebranch'} with $CONFIG::config->{'targetbranch'} \n";
+	} else {
+	    print "No git info and no imagelist set, so setting all dockers to build \n";
+	    $CONFIG::config->{all}=1;
+	}
+    }
+}
+
+
+if ($CONFIG::config->{all}) {
+    foreach my $docker (keys %{$dockers}) {
+	$dockers->{$docker}->{NEEDS_BUILDING} = 1;
+	$dockers->{$docker}->{BUILD_REASON} .= ' Set by all.  ';
+    }	
+}  
+
+
+# Find where every docker is from. Mark them accordingly.
+buildops::discover_depenancies($dockers);
+buildops::mark_build_dependancies($dockers);
+
+
+
+
+# This is the order of the build, based on the DAG.
+# This list includes all docker, including those that
+# don't need to be built.
+
+my $build_number = buildops::get_build_number();
+my $thistag = $build_number;
+if ($CONFIG::config->{master}) {
+    $thistag = 'master';
+}
+
+$CONFIG::config->{'build_order'} = buildops::docker_build_order($dockers);
+
+
+print "\nHere are the Dockers found and their build order.  This list is all dockers, even those that won't be built \n";
+
+my $indent = ' ';
+my $depth = -999;
+foreach my $docker (@{$CONFIG::config->{'build_order'}}) {
+    if ($depth  != $dockers->{$docker}->{FROMDEPTH} ) {
+	$depth = $dockers->{$docker}->{FROMDEPTH};
+	$indent = $indent.'  ';
+    }
+    print "$indent level $dockers->{$docker}->{FROMDEPTH}: $docker ";
+    if ($dockers->{$docker}->{NEEDS_BUILDING}) {
+	print "needs building because: $dockers->{$docker}->{BUILD_REASON} \n";
+    } else {
+	print "Not building \n";
+    }
+}
+print "\n";
+
+
+
+foreach my $docker (keys %{$dockers}) {
+    dockertags::add_docker_tags($dockers->{$docker},$thistag);
+    dockertags::add_docker_tags($dockers->{$docker},$CONFIG::config->{tag});
+}
+
+# At this point we have all the info about all the dockers, their dirs, etc
+# 
+
+if ($CONFIG::config->{'pull'}) {
+    foreach my $docker (@{$CONFIG::config->{'build_order'}}) {
+	print "Pulling docker $docker \n";
+	if ( $dockers->{$docker}->{NEEDS_PULLING}) {
+
+	    print "Pulling $docker \n";
+	    registryops::pull_from_registry($dockers->{$docker});
+	    if (! $dockers->{$docker}->{PULLED_IMAGE}) {
+		print "Pull of image $docker failed. \n";
+		if ($CONFIG::config->{'build-if-pull-fails'}) {
+		    print "Marking $docker to be built. \n";
+		    $dockers->{$docker}->{NEEDS_BUILDING} = 1;
+		    $dockers->{$docker}->{BUILD_REASON} .= 'Pull failed.  ';
+		} else {
+		    print "Build-if-pull-fails is not set, so not building $docker \n";
+		    print "This will probably cause subsequent build failures. \n";
+		}
+	    } else {
+		print "Pull of image $docker succeeded \n";
+	    }
+	} else {
+	    print "Docker $docker not marked for pulling.  Skipping. \n";
+	}
+    }
+}
+
+    
+# now run the pre-build script.  (there is only one)
+if (-x $CONFIG::config->{'pre-build-script'}) {
+    print "Running pre build script: $CONFIG::config->{'pre-build-script'} \n";
+    my $prebuildresult = system($CONFIG::config->{'pre-build-script'});
+}
+
+
+foreach my $docker (@{$CONFIG::config->{'build_order'}}) {
+    print "Starting build for $docker \n";
+
+    if (! -d $dockers->{$docker}->{DIRECTORY_ABSOLUTE_PATH}) {
+	print "ERROR:  Docker directory $dockers->{$docker}->{DIRECTORY_ABSOLUTE_PATH} does not exist for $docker skipping\n";
+	$docker->{$docker->{BUILT}} = 0;
+	next;
+    }
+	
+    if ($dockers->{$docker}->{NEEDS_BUILDING}) {
+	print "Docker $docker is marked as NEEDS BUILDING because $dockers->{$docker}->{BUILD_REASON}  \n";
+
+	print "Running prebuild hooks for $docker \n";
+	
+	$dockers->{$docker}->{PRE_HOOK_OUTPUT} = buildops::run_hooks($dockers->{$docker},'PREHOOKS');
+	my $output = '';
+
+	# Build the docker
+	print "Now building docker $docker \n";
+	$output = buildops::build_docker($dockers->{$docker});
+	
+	$dockers->{$docker}->{DOCKER_BUILD_OUTPUT} = $output;
+	
+	# POST build hooks.
+	print "post build hooks for $docker \n";
+	
+	$dockers->{$docker}->{POST_HOOK_OUTPUT} = buildops::run_hooks($dockers->{$docker},'POSTHOOKS');
+    } else {
+	print "$docker not marked for building.  Skipping \n";
+    }
+}
+
+
+if (-x $CONFIG::config->{'post-build-script'}) {
+    print "Running post build script: $CONFIG::config->{'post-build-script'} \n";
+    my $prebuildresult = system($CONFIG::config->{'post-build-script'});
+}
+
+print "End of docker build run. \n\n";
+
+
+
+my $sucess = reports::post_build_report($dockers);
+
+if ($sucess) {
+    print "All builds succeeded. Build is good\n";
+    exit 0;
+} else {
+    print "Not all builds succeeded. Build failuure\n";
+    exit 1;
+}
+
+
+
+
