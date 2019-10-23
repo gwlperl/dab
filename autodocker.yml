@@ -1,0 +1,69 @@
+
+
+# auto docker options
+
+# In general 1=yes and 0=no
+
+# srcdir
+# autodocker will build dockers in a single directory.
+# The default is the current directory
+
+# Actually build imaages or just go through the motions?
+build: 1	      
+
+# Pull images from the registry beforehand?
+pull: 1      
+
+# Do we push built images to the registry?
+push: 1
+
+
+# GIT Integration.  These are the default branches.
+# If you don't specify them, they default to the current branch for
+# sourcebranch and the master branch for the target.
+# See README.md
+
+# sourcebranch: dev
+targetbranch: master
+
+# Use this tag to add to  pulled images to build against (--cache-from)
+build_against_tag:  master
+
+# Define buildnumer here or some other way.
+# build_number:  999999
+
+showdeps: 1
+
+# If a pull fails, build it instead.
+
+build-if-pull-fails:  1
+
+
+# Build hooks.  These are "semi regex".
+
+pre-build-hook: before-build
+
+post-build-hook: after-build
+
+
+# pre-build-script and post-build-script name scripts to run before and
+#  after the entire build.  There is no default, so if you don't define this
+# nothing will run.  Unlike the hooks in each build directory, there is
+#  no regex matching. -- Only one (pre and one post) script will run.
+#  0 means no script.  It's false in perl so no, you can't have a script
+#  called "0"
+
+pre-build-script: 0
+
+post-build-script: 0
+
+
+# Registry location and port to use to both pull from as pre-reqs
+# And to push images to after being built.
+# You might need to do a "docker login" beforehand.
+
+docker-registry-address: localhost
+docker-registry-port: 5000
+
+
+
