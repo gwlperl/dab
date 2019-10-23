@@ -1,4 +1,4 @@
-
+=
 # The Docker Automatic Builder
 
 
@@ -30,22 +30,26 @@ docker image.
 The command is "dab" and it will properly build all the dockers it can
 find in the current or specified directory.
 
-
+```
 dab --all --srcdir /foo/bar      # Build all the docker images it can find in /foo/bar
 dab --all                        # Build all the docker images it can find in the current directory
-
+```
 
 ### Specifying the config file
 
 
 You may specify all options in a configfile.  You may specify the location of that configfile on the command line with
 
+
+```
 dab --configfile /some/where/config.yml
+```
 
 Or use an environment variable to point to the location
 
+```
 export AUTODOCKER_CONFIGFILE='/else/where/config.yml'
-
+```
 
 Or use the default which is 'autodocker.yml' which is to be found in the "srcdir" or current directory.
 
@@ -63,15 +67,14 @@ require that images that depend on it that are "downstream" must also
 be built.  Images that are "upstream" will need to be either pulled or
 built from scratch.
 
-
 Docker's "build" file is the ubiquitous "Dockerfile".  The FROM directive
 in any Dockerfile specifies the base layer of the image. While docker
 now allows for multiple FROM statements, the DAB does not yet support or
 deal with them and will only use the first FROM statement in any Dockerfile.
 
-
+```
 FROM ubuntu:18.04
-
+```
 
 This means that to build it, the image "ubuntu:18.01" must already be in
 the local registry and will be incorporated in the image as the first
@@ -100,13 +103,13 @@ created, each adding additional images and layers.
 
 Here's an example.
 
-
+```
      ubuntu:18.04
        -->  webserver   FROM ubuntu:18.04
            ->  app_server  - FROM webserver)
        ->  AWS-server-west    -    FROM app_server
                ->  AWS-server-east    -    FROM app_server
-
+```
 
 Here, ubuntu:18.01 is base image and will automatically be pulled from
 the main docker repository docker.io.  If you want a different behaviour
@@ -192,40 +195,45 @@ multiple source directories.
 ## DAB Options
 
 
+```
 dab --all
-
+```
 
 "--all" will build every docker, in the proper order, regardless of
-what's changed.   If your registry
+what's changed.
 
-
+```
 dab --master
+```
 
 Implies "--all" and "--branch master" "--tag master" and "--pull no".  
 
 
+```
 dab --pull
+```
 
 Pull requisite docker images before building.  Specify the registy with
 the config options  docker-registry-address and docker-registry-port.
 
 
+```
 dab --push
-
+```
 
 Push images to the registry after a successful build.
 
-
+```
 dab --srcdir my-dockers.
-
+```
 
 Search the directory "my-dockers" and find all sub directories that
 contain a "Dockerfile".
 
 
-
+```
 dab --srcdir my-dockers --source_branch dev --target_branch beta123
-
+```
 
 This will cd to "my-dockers" and determine what to build by doing a git
 diff between branches "dev" and "beta123".  However, if this git fails,
