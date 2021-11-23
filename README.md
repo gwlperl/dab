@@ -14,8 +14,6 @@ The Docker Automatic Builder will:
 - Tag images with usefull info
 - Pull and push images to private docker registries
 
-
-
 ## Quickstart - Getting it to work
 
 The dab is a perl script written for unixlike operating systems..  It
@@ -313,4 +311,3 @@ Certainly numerous.
 The DAB is publised under the Perl Artistic License 2.9.
 See LICENSE.TXT
 Gerry Lawrence
-
